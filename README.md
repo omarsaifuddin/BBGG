@@ -1,10 +1,10 @@
 # BBGG: Proxmox Automated Cloud & VPC Framework (Single-IP Ingress)
 
-A production-grade, self-service cloud framework transforming a Proxmox VE hypervisor into an **AWS VPC / Lightsail-style** public cloud platform with **only one public IPv4 address**.
+A ~~production-grade~~ self-service cloud framework transforming a Proxmox VE hypervisor into an **AWS VPC / Lightsail-style** public cloud platform with **only one public IPv4 address**.
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 1. **Single-IP Domain Routing (Ingress Layer)**
    - Powered by **Caddy v2 with On-Demand TLS**.
@@ -35,7 +35,7 @@ A production-grade, self-service cloud framework transforming a Proxmox VE hyper
 
 ---
 
-## 🏛 Architecture Diagram
+## Architecture Diagram
 
 ```
                         PUBLIC INTERNET (Single Public IPv4)
@@ -48,7 +48,7 @@ A production-grade, self-service cloud framework transforming a Proxmox VE hyper
 ┌───────────────────────────────┐               ┌───────────────────────────────┐
 │ Caddy Edge Reverse Proxy      │               │ Host DNAT Forwarder           │
 │ • Host Header / SNI Routing   │               │ (iptables / nftables)         │
-│ • On-Demand TLS (Let's Encrypt)│              │ • Maps public_ip:20022        │
+│ • On-Demand TLS               │               │ • Maps public_ip:20022        │
 │ • Dynamic REST API (:2019)    │               │   -> 10.100.1.10:22           │
 └───────────────┬───────────────┘               └───────────────┬───────────────┘
                 │                                               │
@@ -61,7 +61,7 @@ A production-grade, self-service cloud framework transforming a Proxmox VE hyper
 ┌───────▼──────────────────────────┐         ┌──────────────────────────▼───────┐
 │ Tenant A: VPC (10.100.1.0/24)    │         │ Tenant B: VPC (10.100.2.0/24)    │
 │ Bridge: vnet101                  │         │ Bridge: vnet102                  │
-│ • Virtual Router Gateway (100.1.1)│        │ • Virtual Router Gateway (100.2.1)│
+│ • Virtual Gateway (100.x.1)      │         │ • Virtual Gateway (100.2.1)      │
 │ • VPS 1: 10.100.1.10 (Ubuntu)    │         │ • VPS 1: 10.100.2.10 (Debian)    │
 │ • VPS 2: 10.100.1.11 (Alpine)    │         │ • WireGuard VPN (10.100.2.250)   │
 │ • WireGuard VPN (10.100.1.250)   │         └──────────────────────────────────┘
@@ -70,7 +70,7 @@ A production-grade, self-service cloud framework transforming a Proxmox VE hyper
 
 ---
 
-## 🚀 Quick Start & Deployment
+## Quick Start & Deployment
 
 ### Option 1: Docker Compose (All-in-One)
 
@@ -116,7 +116,7 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
-## 🛠 Proxmox Hypervisor Host Setup
+## Proxmox Hypervisor Host Setup
 
 Run the scripts in `proxmox-setup/` directly on your Proxmox VE root shell:
 
@@ -151,7 +151,7 @@ Run the scripts in `proxmox-setup/` directly on your Proxmox VE root shell:
 
 ---
 
-## 🌐 How Domain Routing Works for Customers
+## How Domain Routing Works for Customers
 
 1. Customer registers their domain or subdomain (e.g. `app.customer.com`).
 2. In their DNS provider, they add a **CNAME** record:
@@ -170,9 +170,11 @@ Run the scripts in `proxmox-setup/` directly on your Proxmox VE root shell:
 
 ---
 
-## 🛡 Non-HTTP Traffic (SSH, DB, Game Servers)
+## Non-HTTP Traffic (SSH, DB, Game Servers)
 
 For services that do not use HTTP Host headers:
 1. **In-Browser Web Console**: Access the full terminal directly in the dashboard via secure Proxmox noVNC WebSockets (no open ports needed).
 2. **High-Port Forwarding**: Allocate high-ports (`20000–29999`) in the dashboard (e.g. `ssh -p 20022 clouduser@public_ip`).
 3. **WireGuard Client Tunnel**: Download the 1-click `.conf` from the VPC page to establish a secure VPN tunnel directly into your private `10.100.x.x` subnet.
+
+This is brand spanking new and no warranty or support will be provided. Figure it out.
