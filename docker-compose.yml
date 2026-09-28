@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # 1. FastAPI Orchestrator & Control Plane
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cloudcontrol_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PROJECT_NAME=CloudControl Proxmox VPC
+      - PUBLIC_IP=${PUBLIC_IP:-203.0.113.10}
+      - BASE_DOMAIN=${BASE_DOMAIN:-cloud.yourdomain.com}
+      - CADDY_ADMIN_API_URL=http://edge-proxy:2019
+      - DATABASE_URL=sqlite+aiosqlite:///./cloud_platform.db
+      - SECRET_KEY=${SECRET_KEY:-change_this_to_a_super_secure_random_key_in_production_32chars}
+      - MOCK_PROXMOX=${MOCK_PROXMOX:-true}
+      - PROXMOX_HOST=${PROXMOX_HOST:-192.168.1.100}
+      - PROXMOX_PORT=${PROXMOX_PORT:-8006}
+      - PROXMOX_USER=${PROXMOX_USER:-root@pam}
+      - PROXMOX_TOKEN_NAME=${PROXMOX_TOKEN_NAME:-api_token}
+      - PROXMOX_TOKEN_VALUE=${PROXMOX_TOKEN_VALUE:-}
+      - PROXMOX_DEFAULT_NODE=${PROXMOX_DEFAULT_NODE:-pve}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - backend_data:/app
+    networks:
+      - cloud_net
+
+  # 2. Customer Portal Frontend (React + Vite + Tailwind)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cloudcontrol_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - cloud_net
+
+  # 3. Single-IP Edge Gateway (Caddy with On-Demand TLS & Dynamic Routing)
+  edge-proxy:
+    build:
+      context: ./edge-proxy
+      dockerfile: Dockerfile
+    container_name: cloudcontrol_edge_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "2019:2019"
+    environment:
+      - CADDY_INGRESS_NETWORK=cloud_net
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - cloud_net
+
+volumes:
+  backend_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  cloud_net:
+    driver: bridge

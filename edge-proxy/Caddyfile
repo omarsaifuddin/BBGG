@@ -1,0 +1,44 @@
+{
+    # Enable Caddy Admin API for dynamic zero-downtime route management
+    admin 0.0.0.0:2019
+
+    # Global On-Demand TLS Configuration
+    on_demand_tls {
+        # Security hook: Caddy will ask our FastAPI backend before issuing a certificate
+        # to prevent Let's Encrypt rate-limit exhaustion and DDoS attacks
+        ask http://backend:8000/api/routes/check-domain
+        interval 2m
+        burst 5
+    }
+}
+
+# 1. Main Platform Control Plane (Frontend & Backend API)
+# Point your primary domain (e.g. cloud.yourdomain.com) here
+:80, :443 {
+    # Route API requests to FastAPI backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Route OpenAPI docs
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+
+    # All other traffic routes to Customer Portal Frontend
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+
+# 2. Dynamic customer domain routes are injected on-the-fly via Caddy Admin REST API:
+# POST http://localhost:2019/config/apps/http/servers/srv0/routes
+# Example runtime rule injected by backend:
+# {
+#   "@id": "route_app_customer_com",
+#   "match": [{"host": ["app.customer.com"]}],
+#   "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": "10.100.1.10:3000"}]}]
+# }
