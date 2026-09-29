@@ -127,13 +127,15 @@ export const BillingView = () => {
                   </button>
                 )}
 
-                {/* Dev Quick Switch */}
-                <button
-                  onClick={() => handleSimulate(plan.id)}
-                  className="w-full py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
-                >
-                  ⚡ Simulate Upgrade (Dev Mode)
-                </button>
+                {/* Dev Quick Switch (only when the backend sets BILLING_SIMULATOR_ENABLED) */}
+                {subData?.billing_simulator_enabled && (
+                  <button
+                    onClick={() => handleSimulate(plan.id)}
+                    className="w-full py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    ⚡ Simulate Upgrade (Dev Mode)
+                  </button>
+                )}
               </div>
             </div>
           );

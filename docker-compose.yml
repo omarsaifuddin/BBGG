@@ -15,8 +15,10 @@ services:
       - PUBLIC_IP=${PUBLIC_IP:-203.0.113.10}
       - BASE_DOMAIN=${BASE_DOMAIN:-cloud.yourdomain.com}
       - CADDY_ADMIN_API_URL=http://edge-proxy:2019
-      - DATABASE_URL=sqlite+aiosqlite:///./cloud_platform.db
-      - SECRET_KEY=${SECRET_KEY:-change_this_to_a_super_secure_random_key_in_production_32chars}
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/cloud_platform.db
+      # Required when MOCK_PROXMOX=false (generate with `openssl rand -hex 32`)
+      - SECRET_KEY=${SECRET_KEY:-}
+      - BILLING_SIMULATOR_ENABLED=${BILLING_SIMULATOR_ENABLED:-false}
       - MOCK_PROXMOX=${MOCK_PROXMOX:-true}
       - PROXMOX_HOST=${PROXMOX_HOST:-192.168.1.100}
       - PROXMOX_PORT=${PROXMOX_PORT:-8006}
@@ -28,7 +30,9 @@ services:
       - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-pk_test_placeholder}
       - FRONTEND_URL=http://localhost:3000
     volumes:
-      - backend_data:/app
+      # Only the data directory is persisted; mounting over /app would pin the
+      # first build's code and silently ignore every later rebuild.
+      - backend_data:/app/data
     networks:
       - cloud_net
 
@@ -54,7 +58,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "2019:2019"
+      # The Caddy admin API (:2019) is deliberately not published; the backend
+      # reaches it at http://edge-proxy:2019 over cloud_net.
     environment:
       - CADDY_INGRESS_NETWORK=cloud_net
     volumes:

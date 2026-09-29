@@ -26,6 +26,11 @@ async def get_current_user(
         raise HTTPException(status_code=400, detail="Inactive or non-existent user")
     return user
 
+async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required")
+    return current_user
+
 @router.post("/register", response_model=Token)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     # Check if user already exists

@@ -4,6 +4,7 @@ from sqlalchemy.future import select
 from typing import List
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.routers.auth import get_current_user
 from app.models.user import User
 from app.models.billing import Subscription
@@ -31,7 +32,8 @@ async def get_user_subscription(
         plan_id=plan_id,
         status=status,
         current_period_end=sub.current_period_end if sub else None,
-        plans=[PlanInfo(**p) for p in stripe_service.get_plans()]
+        plans=[PlanInfo(**p) for p in stripe_service.get_plans()],
+        billing_simulator_enabled=settings.BILLING_SIMULATOR_ENABLED
     )
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
@@ -58,6 +60,8 @@ async def simulate_plan_activation(
     db: AsyncSession = Depends(get_db)
 ):
     """Allows testing plan upgrades in development/demo without live Stripe checkout."""
+    if not settings.BILLING_SIMULATOR_ENABLED:
+        raise HTTPException(status_code=404, detail="Not Found")
     if plan_id not in PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
 

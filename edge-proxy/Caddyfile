@@ -1,5 +1,8 @@
 {
-    # Enable Caddy Admin API for dynamic zero-downtime route management
+    # Enable Caddy Admin API for dynamic zero-downtime route management.
+    # It must only be reachable by the backend over the internal Docker network:
+    # never publish port 2019 on the host. Caddy skips Host-header checks on
+    # wildcard binds, so anyone who can reach this port can rewrite the ingress config.
     admin 0.0.0.0:2019
 
     # Global On-Demand TLS Configuration

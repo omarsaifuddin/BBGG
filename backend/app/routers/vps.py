@@ -13,6 +13,7 @@ from app.models.vpc import VPC
 from app.models.vps import VPS
 from app.schemas.vps import VPSCreate, VPSResponse, VPSAction, VPSConsoleResponse, VPSStatsResponse
 from app.services.proxmox_service import proxmox_service
+from app.services.quota_service import check_vps_quota, user_lock
 from app.services.router_service import router_service
 
 router = APIRouter(prefix="/vps", tags=["VPS Instances"])
@@ -39,71 +40,74 @@ async def create_vps_instance(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Verify VPC exists and belongs to user
-    res = await db.execute(
-        select(VPC)
-        .where(VPC.id == vps_in.vpc_id, VPC.user_id == current_user.id)
-        .options(selectinload(VPC.vps_instances))
-    )
-    vpc = res.scalars().first()
-    if not vpc:
-        raise HTTPException(status_code=404, detail="Target VPC not found")
+    async with user_lock(current_user.id):
+        await check_vps_quota(db, current_user.id, cores=vps_in.cores, memory_mb=vps_in.memory_mb)
 
-    # Pick template
-    template_id = OS_TEMPLATES.get(vps_in.os_type.lower(), settings.PROXMOX_UBUNTU_TEMPLATE_ID)
+        # Verify VPC exists and belongs to user
+        res = await db.execute(
+            select(VPC)
+            .where(VPC.id == vps_in.vpc_id, VPC.user_id == current_user.id)
+            .options(selectinload(VPC.vps_instances))
+        )
+        vpc = res.scalars().first()
+        if not vpc:
+            raise HTTPException(status_code=404, detail="Target VPC not found")
 
-    # Next free VMID
-    vmid = await proxmox_service.get_next_vmid()
+        # Pick template
+        template_id = OS_TEMPLATES.get(vps_in.os_type.lower(), settings.PROXMOX_UBUNTU_TEMPLATE_ID)
 
-    # Calculate static internal IP in VPC subnet (e.g. 10.100.1.10)
-    instance_index = len(vpc.vps_instances)
-    internal_ip = router_service.get_next_instance_ip(vpc.cidr_block, instance_index)
-    ip_cidr = f"{internal_ip}/24"
-    generated_pass = secrets.token_urlsafe(12)
+        # Next free VMID
+        vmid = await proxmox_service.get_next_vmid()
 
-    # 1. Clone template
-    clone_ok = await proxmox_service.clone_vm(
-        template_id=template_id,
-        new_vmid=vmid,
-        name=vps_in.name
-    )
-    if not clone_ok:
-        raise HTTPException(status_code=500, detail="Failed to clone VM template in Proxmox")
+        # Calculate static internal IP in VPC subnet (e.g. 10.100.1.10)
+        instance_index = len(vpc.vps_instances)
+        internal_ip = router_service.get_next_instance_ip(vpc.cidr_block, instance_index)
+        ip_cidr = f"{internal_ip}/24"
+        generated_pass = secrets.token_urlsafe(12)
 
-    # 2. Configure Cloud-Init & Network
-    await proxmox_service.configure_cloudinit(
-        vmid=vmid,
-        ip_cidr=ip_cidr,
-        gateway=vpc.router_ip,
-        vnet_bridge=vpc.vnet_id,
-        cores=vps_in.cores,
-        memory_mb=vps_in.memory_mb,
-        disk_gb=vps_in.disk_gb,
-        ssh_key=vps_in.ssh_public_key,
-        password=generated_pass
-    )
+        # 1. Clone template
+        clone_ok = await proxmox_service.clone_vm(
+            template_id=template_id,
+            new_vmid=vmid,
+            name=vps_in.name
+        )
+        if not clone_ok:
+            raise HTTPException(status_code=500, detail="Failed to clone VM template in Proxmox")
 
-    # 3. Boot VM
-    await proxmox_service.start_vm(vmid=vmid)
+        # 2. Configure Cloud-Init & Network
+        await proxmox_service.configure_cloudinit(
+            vmid=vmid,
+            ip_cidr=ip_cidr,
+            gateway=vpc.router_ip,
+            vnet_bridge=vpc.vnet_id,
+            cores=vps_in.cores,
+            memory_mb=vps_in.memory_mb,
+            disk_gb=vps_in.disk_gb,
+            ssh_key=vps_in.ssh_public_key,
+            password=generated_pass
+        )
 
-    new_vps = VPS(
-        user_id=current_user.id,
-        vpc_id=vpc.id,
-        name=vps_in.name,
-        proxmox_vmid=vmid,
-        node=settings.PROXMOX_DEFAULT_NODE,
-        os_type=vps_in.os_type,
-        internal_ip=internal_ip,
-        cores=vps_in.cores,
-        memory_mb=vps_in.memory_mb,
-        disk_gb=vps_in.disk_gb,
-        status="RUNNING",
-        ssh_public_key=vps_in.ssh_public_key,
-        root_password=generated_pass
-    )
-    db.add(new_vps)
-    await db.commit()
-    await db.refresh(new_vps)
+        # 3. Boot VM
+        await proxmox_service.start_vm(vmid=vmid)
+
+        new_vps = VPS(
+            user_id=current_user.id,
+            vpc_id=vpc.id,
+            name=vps_in.name,
+            proxmox_vmid=vmid,
+            node=settings.PROXMOX_DEFAULT_NODE,
+            os_type=vps_in.os_type,
+            internal_ip=internal_ip,
+            cores=vps_in.cores,
+            memory_mb=vps_in.memory_mb,
+            disk_gb=vps_in.disk_gb,
+            status="RUNNING",
+            ssh_public_key=vps_in.ssh_public_key,
+            root_password=generated_pass
+        )
+        db.add(new_vps)
+        await db.commit()
+        await db.refresh(new_vps)
 
     return VPSResponse.model_validate(new_vps)
 
@@ -189,8 +193,10 @@ async def delete_vps(
     if not vps:
         raise HTTPException(status_code=404, detail="VPS not found")
 
-    # Destroy on Proxmox
-    await proxmox_service.destroy_vm(vps.proxmox_vmid)
+    # Destroy on Proxmox. Keep the row on failure: deleting it would free the
+    # user's quota while the VM may still be running.
+    if not await proxmox_service.destroy_vm(vps.proxmox_vmid):
+        raise HTTPException(status_code=502, detail="Proxmox could not destroy this VM. It has been kept; try again.")
 
     # Delete from DB
     await db.delete(vps)

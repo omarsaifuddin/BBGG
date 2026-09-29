@@ -14,7 +14,7 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 
 const ProtectedLayout = () => {
-  const { isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
 
   if (loading) {
     return (
@@ -41,7 +41,7 @@ const ProtectedLayout = () => {
             <Route path="/domains" element={<DomainsView />} />
             <Route path="/ports" element={<PortsView />} />
             <Route path="/billing" element={<BillingView />} />
-            <Route path="/status" element={<StatusView />} />
+            <Route path="/status" element={user?.is_admin ? <StatusView /> : <Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

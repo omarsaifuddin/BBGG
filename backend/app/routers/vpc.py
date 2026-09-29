@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.vpc import VPC
 from app.schemas.vpc import VPCCreate, VPCResponse, WireGuardConfigResponse
 from app.services.proxmox_service import proxmox_service
+from app.services.quota_service import check_vpc_quota, user_lock
 from app.services.router_service import router_service
 
 router = APIRouter(prefix="/vpcs", tags=["VPC"])
@@ -51,35 +52,38 @@ async def create_vpc(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    # Count current user's VPCs to generate distinct ID and subnet
-    count_res = await db.execute(select(VPC))
-    total_existing = len(count_res.scalars().all()) + 1
+    async with user_lock(current_user.id):
+        await check_vpc_quota(db, current_user.id)
 
-    cidr = router_service.generate_vpc_cidr(total_existing)
-    router_ip = router_service.get_router_ip(cidr)
-    vnet_id = f"vnet{100 + total_existing}"
+        # Count current user's VPCs to generate distinct ID and subnet
+        count_res = await db.execute(select(VPC))
+        total_existing = len(count_res.scalars().all()) + 1
 
-    # Generate WireGuard keys for customer VPN client access
-    privkey, pubkey = router_service.generate_wireguard_keys()
-    client_ip = f"{cidr.rsplit('.', 1)[0]}.250"
+        cidr = router_service.generate_vpc_cidr(total_existing)
+        router_ip = router_service.get_router_ip(cidr)
+        vnet_id = f"vnet{100 + total_existing}"
 
-    # Provision Proxmox SDN VNet
-    await proxmox_service.create_vnet(vnet_id=vnet_id, zone=settings.PROXMOX_SDN_ZONE)
+        # Generate WireGuard keys for customer VPN client access
+        privkey, pubkey = router_service.generate_wireguard_keys()
+        client_ip = f"{cidr.rsplit('.', 1)[0]}.250"
 
-    new_vpc = VPC(
-        user_id=current_user.id,
-        name=vpc_in.name,
-        cidr_block=cidr,
-        vnet_id=vnet_id,
-        router_ip=router_ip,
-        wireguard_public_key=pubkey,
-        wireguard_private_key=privkey,
-        wireguard_client_ip=client_ip,
-        status="ACTIVE"
-    )
-    db.add(new_vpc)
-    await db.commit()
-    await db.refresh(new_vpc)
+        # Provision Proxmox SDN VNet
+        await proxmox_service.create_vnet(vnet_id=vnet_id, zone=settings.PROXMOX_SDN_ZONE)
+
+        new_vpc = VPC(
+            user_id=current_user.id,
+            name=vpc_in.name,
+            cidr_block=cidr,
+            vnet_id=vnet_id,
+            router_ip=router_ip,
+            wireguard_public_key=pubkey,
+            wireguard_private_key=privkey,
+            wireguard_client_ip=client_ip,
+            status="ACTIVE"
+        )
+        db.add(new_vpc)
+        await db.commit()
+        await db.refresh(new_vpc)
 
     return VPCResponse(
         id=new_vpc.id,
@@ -129,10 +133,18 @@ async def delete_vpc(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    res = await db.execute(select(VPC).where(VPC.id == vpc_id, VPC.user_id == current_user.id))
+    res = await db.execute(
+        select(VPC)
+        .where(VPC.id == vpc_id, VPC.user_id == current_user.id)
+        .options(selectinload(VPC.vps_instances))
+    )
     vpc = res.scalars().first()
     if not vpc:
         raise HTTPException(status_code=404, detail="VPC not found")
+
+    # Cascading the rows away would free quota while the VMs keep running in Proxmox
+    if vpc.vps_instances:
+        raise HTTPException(status_code=409, detail="Destroy the VPS instances in this VPC before deleting it")
 
     await db.delete(vpc)
     await db.commit()
