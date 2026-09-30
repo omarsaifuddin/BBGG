@@ -208,6 +208,10 @@ class ProxmoxService:
                 self.client.nodes(self.node).qemu(vmid).delete(purge=1)
                 return True
             except Exception as e:
+                # Already removed out-of-band (e.g. from the Proxmox UI): nothing left to destroy
+                if "does not exist" in str(e):
+                    logger.warning(f"VM {vmid} no longer exists in Proxmox; treating as destroyed")
+                    return True
                 logger.error(f"Error destroying VM {vmid}: {e}")
                 return False
         logger.info(f"[MOCK] Destroyed VM {vmid}")

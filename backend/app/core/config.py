@@ -1,11 +1,22 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, List
+import logging
 import os
+import secrets
+
+logger = logging.getLogger(__name__)
+
+# Placeholder keys that have shipped in this repo's defaults and examples
+PLACEHOLDER_SECRET_KEYS = {
+    "change_this_to_a_super_secure_random_key_in_production_32chars",
+    "generate_a_random_32_character_secret_key_here",
+}
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Proxmox VPC Cloud Platform"
     API_V1_STR: str = "/api"
-    SECRET_KEY: str = "change_this_to_a_super_secure_random_key_in_production_32chars"
+    SECRET_KEY: str = ""  # Signs login tokens. Generate with `openssl rand -hex 32`
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
     ALGORITHM: str = "HS256"
 
@@ -46,9 +57,33 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = "whsec_placeholder"
     STRIPE_CURRENCY: str = "usd"
 
+    # Exposes /billing/simulate-activate, which lets any user switch plans without paying.
+    # Development and demos only.
+    BILLING_SIMULATOR_ENABLED: bool = False
+
     # Frontend URL for CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
+
+    @model_validator(mode="after")
+    def require_secret_key(self):
+        """Refuse guessable signing keys once real infrastructure is attached."""
+        key = self.SECRET_KEY
+        if key and key not in PLACEHOLDER_SECRET_KEYS and len(key) >= 32:
+            return self
+        if not self.MOCK_PROXMOX:
+            # Not ValueError: pydantic would wrap it and echo every loaded setting,
+            # secrets included, into the startup log.
+            raise RuntimeError(
+                "SECRET_KEY must be a random value of at least 32 characters when "
+                "MOCK_PROXMOX=false. Generate one with `openssl rand -hex 32`."
+            )
+        logger.warning(
+            "SECRET_KEY is unset, a placeholder, or shorter than 32 characters; using a "
+            "random key for this process. Logins will not survive a restart."
+        )
+        self.SECRET_KEY = secrets.token_urlsafe(48)
+        return self
 
 settings = Settings()

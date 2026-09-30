@@ -26,7 +26,7 @@ export const VpcView = () => {
   }, []);
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete VPC "${name}"? All associated instances will be terminated.`)) {
+    if (!window.confirm(`Are you sure you want to delete VPC "${name}"? Its VPS instances must be destroyed first.`)) {
       return;
     }
     try {

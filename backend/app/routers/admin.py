@@ -3,13 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.core.database import get_db
 from app.core.config import settings
+from app.routers.auth import get_current_admin
 from app.models.user import User
 from app.models.vpc import VPC
 from app.models.vps import VPS
 from app.models.domain_route import DomainRoute
 from app.models.port_forward import PortForward
 
-router = APIRouter(prefix="/admin", tags=["System & Admin Status"])
+# Every endpoint on this router requires an administrator
+router = APIRouter(
+    prefix="/admin",
+    tags=["System & Admin Status"],
+    dependencies=[Depends(get_current_admin)]
+)
 
 @router.get("/status")
 async def get_system_status(db: AsyncSession = Depends(get_db)):

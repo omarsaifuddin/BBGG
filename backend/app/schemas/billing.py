@@ -28,5 +28,6 @@ class SubscriptionResponse(BaseModel):
     status: str
     current_period_end: Optional[datetime] = None
     plans: List[PlanInfo]
+    billing_simulator_enabled: bool = False
 
     model_config = ConfigDict(from_attributes=True)

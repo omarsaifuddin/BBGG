@@ -30,8 +30,8 @@ A ~~production-grade~~ self-service cloud framework transforming a Proxmox VE hy
 5. **Customer Portal & Stripe Billing**
    - Modern React + Tailwind CSS dashboard.
    - Stripe Subscription Checkout sessions and webhooks.
-   - Tiered plans: Starter ($15/mo), Pro ($35/mo), Enterprise ($75/mo).
-   - Built-in Dev Simulator to test upgrades without live Stripe keys.
+   - Tiered plans: Starter ($15/mo), Pro ($35/mo), Enterprise ($75/mo), with enforced VPC, VPS, vCPU and RAM quotas.
+   - Built-in Dev Simulator to test upgrades without live Stripe keys (opt-in with `BILLING_SIMULATOR_ENABLED=true`; it lets any user change plans for free, so never enable it in production).
 
 ---
 
@@ -78,6 +78,7 @@ A ~~production-grade~~ self-service cloud framework transforming a Proxmox VE hy
    ```bash
    cp .env.example .env
    ```
+   Set `SECRET_KEY` to the output of `openssl rand -hex 32`. The backend refuses to start without one when `MOCK_PROXMOX=false`.
 
 2. Start the entire platform (Backend, Frontend, and Caddy Edge Proxy):
    ```bash
@@ -87,7 +88,12 @@ A ~~production-grade~~ self-service cloud framework transforming a Proxmox VE hy
 3. Open your browser:
    - **Customer Portal**: `http://localhost:3000` (or `http://your-server-ip:3000`)
    - **Backend API Docs**: `http://localhost:8000/docs`
-   - **Caddy Ingress**: Ports 80 & 443
+   - **Caddy Ingress**: Ports 80 & 443 (the Caddy admin API on 2019 stays on the internal Docker network)
+
+4. Register an account in the portal, then make it an administrator (this unlocks **System Health**):
+   ```bash
+   docker compose exec backend python -m app.cli make-admin you@example.com
+   ```
 
 ---
 
@@ -104,6 +110,9 @@ pip install -r backend/requirements.txt
 
 # Run FastAPI development server
 uvicorn app.main:app --app-dir backend --reload --port 8000
+
+# Run the test suite (uses a throwaway database and mock Proxmox)
+pytest backend/tests
 ```
 
 #### 2. Frontend (React + Vite + Tailwind CSS)

@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Network, Server, Globe, ArrowRightLeft, CreditCard, Activity } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
@@ -9,17 +10,20 @@ const navItems = [
   { to: '/domains', label: 'Domain Routing (Ingress)', icon: Globe },
   { to: '/ports', label: 'Port Forwarding', icon: ArrowRightLeft },
   { to: '/billing', label: 'Billing & Plans', icon: CreditCard },
-  { to: '/status', label: 'System Health', icon: Activity },
+  { to: '/status', label: 'System Health', icon: Activity, adminOnly: true },
 ];
 
 export const Sidebar = () => {
+  const { user } = useAuth();
+  const visibleItems = navItems.filter((item) => !item.adminOnly || user?.is_admin);
+
   return (
     <aside className="w-64 bg-[#0f172a] border-r border-slate-800 flex flex-col justify-between p-4">
       <div className="space-y-1">
         <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
           Cloud Console
         </p>
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
